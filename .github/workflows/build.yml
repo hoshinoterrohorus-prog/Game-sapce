@@ -4,9 +4,6 @@ on:
   push:
     branches: [main, master]
 
-env:
-  GODOT_VERSION: 4.4.1
-
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -15,10 +12,10 @@ jobs:
 
       - name: Ekstrak project dari zip
         run: |
-          Z=$(ls *.zip | head -n1)
+          Z=$(ls *Prism*.zip | head -n1)
           echo "Zip: $Z"
           mkdir -p work && unzip -q "$Z" -d work
-          P=$(dirname "$(find work -name project.godot | head -n1)")
+          P=$(dirname "$(find work -name settings.gradle.kts | head -n1)")
           echo "Project: $P"
           echo "PROJ=$P" >> $GITHUB_ENV
 
@@ -35,40 +32,19 @@ jobs:
       - name: Install SDK packages
         run: |
           yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "build-tools;35.0.1" "platforms;android-35" "cmdline-tools;latest" "cmake;3.10.2.4988404" "ndk;28.1.13356709"
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-      - name: Install Godot + export templates
-        run: |
-          B=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
-          wget -q $B/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip -O g.zip
-          wget -q $B/Godot_v${GODOT_VERSION}-stable_export_templates.tpz -O t.zip
-          unzip -q g.zip && sudo mv Godot_v${GODOT_VERSION}-stable_linux.x86_64 /usr/local/bin/godot
-          mkdir -p ~/.local/share/godot/export_templates
-          unzip -q t.zip -d tpl && mv tpl/templates ~/.local/share/godot/export_templates/${GODOT_VERSION}.stable
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
 
-      - name: Debug keystore + editor settings
-        run: |
-          keytool -keyalg RSA -genkeypair -alias androiddebugkey -keypass android -keystore $PWD/debug.keystore -storepass android -dname "CN=Android Debug,O=Android,C=US" -validity 9999 -deststoretype pkcs12
-          mkdir -p ~/.config/godot
-          {
-            echo '[gd_resource type="EditorSettings" format=3]'
-            echo '[resource]'
-            echo "export/android/java_sdk_path = \"$JAVA_HOME\""
-            echo "export/android/android_sdk_path = \"$ANDROID_HOME\""
-            echo "export/android/debug_keystore = \"$PWD/debug.keystore\""
-            echo 'export/android/debug_keystore_user = "androiddebugkey"'
-            echo 'export/android/debug_keystore_pass = "android"'
-          } > ~/.config/godot/editor_settings-4.4.tres
-
-      - name: Export APK
+      - name: Build APK
         run: |
           cd "$PROJ"
-          mkdir -p build
-          godot --headless --import || true
-          godot --headless --export-debug "Android" build/FPSTester.apk
-          ls -la build
+          gradle :app:assembleDebug --no-daemon --stacktrace
+          ls -la app/build/outputs/apk/debug
 
       - uses: actions/upload-artifact@v4
         with:
-          name: FPSTester-apk
-          path: ${{ env.PROJ }}/build/FPSTester.apk
+          name: PrismLauncher.apk
+          path: ${{ env.PROJ }}/app/build/outputs/apk/debug/*.apk
